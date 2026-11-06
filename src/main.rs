@@ -1,21 +1,38 @@
+use anyhow::{Context, Result};
 use clap::Parser;
+use log::info;
+use memchr::memmem;
+use std::io::{self, BufWriter, IsTerminal, Write};
+
+mod highlight;
+
+use highlight::write_highlighted;
 
 #[derive(Parser)]
 struct Cli {
     search: String,
 }
 
-fn main() {
+fn main() -> Result<()> {
+    env_logger::init();
     let args = Cli::parse();
-    let history_file_path = std::path::PathBuf::from("~/.zsh_history");
-    let history = std::fs::read_to_string(history_file_path).expect("Could not read history");
-    let history_lines = history.lines();
+    let home = std::env::var_os("HOME").context("HOME not set")?;
+    let path = std::path::PathBuf::from(home).join(".zsh_history");
 
-    for (i, line) in history_lines.enumerate() {
-        if line.contains(&args.search) {
-            println!("{} {}", i, line)
+    let history = std::fs::read(&path)
+        .with_context(|| format!("Could not read history file at '{}'", path.display()))?;
+    info!("The history file is of size: {}", history.len());
+
+    let color = io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    let finder = memmem::Finder::new(args.search.as_bytes());
+    let mut out = BufWriter::new(io::stdout().lock());
+
+    for (i, line) in history.split(|&b| b == b'\n').enumerate() {
+        if finder.find(line).is_some() {
+            write!(out, "{i} ")?;
+            write_highlighted(&mut out, line, &finder, color)?;
         }
     }
-
-    println!("search: {:?}", args.search);
+    out.flush()?;
+    Ok(())
 }
