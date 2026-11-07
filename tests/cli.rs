@@ -22,7 +22,7 @@ fn prints_matching_lines_with_line_numbers() {
     let output = run_with_history(
         "matching",
         b"ls -la\ngit status\ncargo build\ngit push\n",
-        &["git"],
+        &["git", "-B", "0"],
     );
     assert!(output.status.success());
     assert_eq!(
@@ -46,7 +46,7 @@ fn does_not_color_when_piped() {
 
 #[test]
 fn accepts_non_utf8_history() {
-    let output = run_with_history("non-utf8", b"echo \x83\xa4\ngit status\n", &["git"]);
+    let output = run_with_history("non-utf8", b"echo \x83\xa4\ngit status\n", &["git", "-B", "0"]);
     assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "1 git status\n");
 }
@@ -66,4 +66,53 @@ fn fails_when_history_file_is_missing() {
     std::fs::remove_dir_all(&home).unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Could not read history file"));
+}
+
+#[test]
+fn prints_5_lines_before_match_by_default() {
+    let output = run_with_history(
+        "default-context",
+        b"echo\necho\necho\necho\necho\necho\nmatch\n",
+        &["match"],
+    );
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "1 echo\n2 echo\n3 echo\n4 echo\n5 echo\n6 match\n"
+    );
+}
+
+#[test]
+fn does_not_repeat_lines_on_close_matches() {
+    let output = run_with_history(
+        "close-matches",
+        b"echo\necho\necho\necho\necho\necho\nmatch\nmatch\n",
+        &["match"],
+    );
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "1 echo\n2 echo\n3 echo\n4 echo\n5 echo\n6 match\n7 match\n"
+    );
+}
+
+#[test]
+fn before_context_flag_sets_number_of_lines() {
+    let output = run_with_history(
+        "before-context",
+        b"echo\necho\necho\necho\nmatch\n",
+        &["match", "--before-context", "2"],
+    );
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "2 echo\n3 echo\n4 match\n"
+    );
+}
+
+#[test]
+fn shows_match_on_first_line() {
+    let output = run_with_history("first-line", b"match\necho\n", &["match"]);
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "0 match\n");
 }

@@ -180,7 +180,6 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
- "log",
  "memchr",
 ]
 
