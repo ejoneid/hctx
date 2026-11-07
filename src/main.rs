@@ -4,11 +4,14 @@ use memchr::memmem;
 use std::{
     cmp::max,
     io::{self, BufWriter, IsTerminal, Write},
+    path::PathBuf,
 };
 
 mod highlight;
+mod history;
 
 use highlight::write_highlighted;
+use history::Shell;
 
 #[derive(Parser)]
 struct Cli {
@@ -16,17 +19,29 @@ struct Cli {
     /// Number of history lines to show before each match
     #[arg(short = 'B', long, default_value_t = 5)]
     before_context: usize,
+    /// Shell whose history to search [default: detected from $SHELL]
+    #[arg(short, long, value_enum)]
+    shell: Option<Shell>,
+    /// History file to read [default: the shell's usual location]
+    #[arg(short = 'f', long)]
+    history_file: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
     env_logger::init();
     let args = Cli::parse();
-    let home = std::env::var_os("HOME").context("HOME not set")?;
-    let path = std::path::PathBuf::from(home).join(".zsh_history");
+    let shell = match args.shell {
+        Some(shell) => shell,
+        None => Shell::detect()?,
+    };
+    let path = match args.history_file {
+        Some(path) => path,
+        None => shell.history_path()?,
+    };
 
     let history = std::fs::read(&path)
         .with_context(|| format!("Could not read history file at '{}'", path.display()))?;
-    let history_lines: Vec<&[u8]> = history.split(|&b| b == b'\n').collect();
+    let history_lines = shell.entries(&history);
 
     let color = io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
     let finder = memmem::Finder::new(args.search.as_bytes());
